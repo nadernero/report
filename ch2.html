@@ -306,6 +306,7 @@
     
     <!-- Firebase SDKs -->
     <script type="module">
+        // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc, getDoc, getDocs, updateDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -332,9 +333,6 @@
         let activityAttendanceChart = null;
         let currentReportType = 'individual';
         
-        // NEW: Flag to detect if running locally without Firebase
-        let isLocalMode = false;
-
         const activities = [
             { key: 'visiting', name: 'الافتقاد', icon: 'fa-hand-holding-heart', color: 'bg-orange-500', hover: 'hover:bg-orange-600' },
             { key: 'preparation', name: 'التحضير', icon: 'fa-book-open', color: 'bg-yellow-500', hover: 'hover:bg-yellow-600' },
@@ -385,53 +383,32 @@
         const noActivityLabel = document.getElementById('noActivityLabel');
         const noActivityReason = document.getElementById('noActivityReason');
 
-        // --- LOCAL STORAGE HELPERS (for local mode) ---
-        const getLocalServants = () => {
-            if (!currentServiceName) return [];
-            const key = `church-app-servants-${currentServiceName}`;
-            return JSON.parse(localStorage.getItem(key) || '[]');
-        };
-
-        const saveLocalServants = (servants) => {
-            if (!currentServiceName) return;
-            const key = `church-app-servants-${currentServiceName}`;
-            localStorage.setItem(key, JSON.stringify(servants));
-        };
-
-        const getLocalAttendance = () => {
-            if (!currentServiceName) return {};
-            const key = `church-app-attendance-${currentServiceName}`;
-            return JSON.parse(localStorage.getItem(key) || '{}');
-        };
-
-        const saveLocalAttendance = (attendance) => {
-            if (!currentServiceName) return;
-            const key = `church-app-attendance-${currentServiceName}`;
-            localStorage.setItem(key, JSON.stringify(attendance));
-        };
-
         // --- FIREBASE INITIALIZATION ---
         async function initializeFirebase() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.classList.add('flex');
+            loadingOverlay.classList.remove('hidden-view');
+
             try {
-                // UPDATED: Check if running locally
+                // Check if Firebase config is provided. If not, the app cannot run online.
                 if (typeof __firebase_config === 'undefined' || !__firebase_config || __firebase_config === '{}') {
-                    console.warn("Firebase config not found. Running in LOCAL MODE. Data will be saved in your browser's local storage.");
-                    isLocalMode = true;
-                    userId = 'localUser'; // Use a static ID for local mode
-                    return; // Stop Firebase initialization
+                    throw new Error("Firebase config not found. The application cannot connect to the online database.");
                 }
 
-                isLocalMode = false;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const firebaseConfig = JSON.parse(__firebase_config);
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
+                // Listen for authentication state changes
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
+                        console.log("User is signed in with UID:", userId);
+                        loadingOverlay.classList.add('hidden-view');
+                        loadingOverlay.classList.remove('flex');
                     } else {
+                        // If no user, try to sign in
                         try {
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -440,15 +417,17 @@
                             }
                         } catch (error) {
                             console.error("Sign-in failed:", error);
-                            showMessage("فشل الاتصال بقاعدة البيانات", true);
+                            showMessage("فشل الاتصال بقاعدة البيانات. الرجاء تحديث الصفحة.", true);
+                            loadingOverlay.classList.add('hidden-view');
+                            loadingOverlay.classList.remove('flex');
                         }
                     }
                 });
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
-                showMessage("فشل تهيئة النظام. سيتم التشغيل في الوضع المحلي.", true);
-                isLocalMode = true; // Fallback to local mode on error
-                userId = 'localUser';
+                showMessage("فشل تهيئة النظام. تأكد من صحة إعدادات Firebase.", true);
+                loadingOverlay.classList.add('hidden-view');
+                loadingOverlay.classList.remove('flex');
             }
         }
 
@@ -508,6 +487,7 @@
             loginOrServicesView.classList.add('hidden-view');
             mainDashboard.classList.remove('hidden-view');
             document.getElementById('sidebarServiceName').textContent = currentServiceName;
+            // Load data from Firestore
             await loadServants();
             await loadAttendanceDataForReports();
         }
@@ -517,6 +497,7 @@
             loginOrServicesView.classList.remove('hidden-view');
             document.getElementById('sidebarServiceName').textContent = '';
             currentServiceName = '';
+            // Unsubscribe from Firestore listener to prevent memory leaks
             if (servantsUnsubscribe) servantsUnsubscribe();
             servantsCache = [];
             attendanceCache = [];
@@ -535,10 +516,36 @@
             }
         }
 
-        // --- SERVANTS MANAGEMENT ---
+        // --- FIRESTORE PATHS ---
+        // Using a public path so all users can access the same service data.
+        const getServantsCollection = () => {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            return collection(db, `artifacts/${appId}/public/data/services/${currentServiceName}/servants`);
+        };
+
+        const getAttendanceCollection = () => {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            return collection(db, `artifacts/${appId}/public/data/services/${currentServiceName}/attendance`);
+        };
+
+        const getAttendanceDoc = (date) => {
+             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+             return doc(db, `artifacts/${appId}/public/data/services/${currentServiceName}/attendance`, date);
+        };
+
+        const getServantDoc = (servantId) => {
+             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+             return doc(db, `artifacts/${appId}/public/data/services/${currentServiceName}/servants`, servantId);
+        };
+
+        // --- SERVANTS MANAGEMENT (Using Firestore) ---
         function renderServantsTable(servantsToRender) {
             servantsTableBody.innerHTML = '';
-            servantsToRender.forEach(servant => addServantToTable(servant));
+            if (servantsToRender.length === 0) {
+                servantsTableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-gray-500">لا يوجد خدام مسجلين في هذه الخدمة بعد.</td></tr>`;
+            } else {
+                servantsToRender.forEach(servant => addServantToTable(servant));
+            }
         }
 
         function addServantToTable(servant) {
@@ -559,23 +566,16 @@
             servantsTableBody.appendChild(row);
         }
 
-        // UPDATED: Now supports local mode
         function loadServants() {
             return new Promise((resolve) => {
-                if (isLocalMode) {
-                    servantsCache = getLocalServants();
-                    servantsCache.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-                    renderServantsTable(servantsCache);
-                    populateReportServantSelector();
-                    return resolve();
-                }
-
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                if (!userId || !currentServiceName) return resolve();
-                const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
+                if (!db || !currentServiceName) return resolve();
                 
+                const servantsCol = getServantsCollection();
+                
+                // Unsubscribe from any previous listener
                 if (servantsUnsubscribe) servantsUnsubscribe();
                 
+                // onSnapshot listens for real-time updates
                 servantsUnsubscribe = onSnapshot(servantsCol, (snapshot) => {
                     servantsCache = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
                     servantsCache.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -583,7 +583,7 @@
                     populateReportServantSelector();
                     resolve();
                 }, (error) => {
-                    console.error("Error loading servants:", error);
+                    console.error("Error loading servants from Firestore:", error);
                     showMessage("خطأ في تحميل بيانات الخدام.", true);
                     resolve();
                 });
@@ -622,6 +622,7 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
                         
+                        // Use JPEG for smaller file size, with 70% quality
                         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                         resolve(dataUrl);
                     };
@@ -659,6 +660,10 @@
                 confessionFather: document.getElementById('servantConfessionFather').value,
             };
 
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.classList.add('flex');
+            loadingOverlay.classList.remove('hidden-view');
+
             try {
                 if (imageFile) {
                     const imageUrl = await resizeAndEncodeImage(imageFile);
@@ -668,6 +673,13 @@
                 }
 
                 if (servantId) {
+                    // If it's an update, don't overwrite the image if a new one isn't uploaded
+                    if (!servantData.imageUrl) {
+                        const existingServant = servantsCache.find(s => s.id === servantId);
+                        if (existingServant && existingServant.imageUrl) {
+                           servantData.imageUrl = existingServant.imageUrl;
+                        }
+                    }
                     await updateServant(servantId, servantData);
                 } else {
                     await addServant(servantData);
@@ -675,93 +687,45 @@
 
                 closeModal(manualEntryModal);
             } catch (error) {
-                showMessage('حدث خطأ أثناء معالجة الصورة.', true);
+                showMessage('حدث خطأ أثناء معالجة البيانات.', true);
                 console.error(error);
+            } finally {
+                loadingOverlay.classList.add('hidden-view');
+                loadingOverlay.classList.remove('flex');
             }
         }
 
-        // UPDATED: Now supports local mode
         async function addServant(servantData) {
-            if (isLocalMode) {
-                try {
-                    const servants = getLocalServants();
-                    servantData.id = `local-${Date.now()}`; // Generate a unique local ID
-                    servants.push(servantData);
-                    saveLocalServants(servants);
-                    await loadServants(); // Reload to update table
-                    showMessage("تم إضافة الخادم بنجاح (محلياً)!");
-                } catch (error) {
-                    console.error("Error adding servant locally:", error);
-                    showMessage("فشل إضافة الخادم (محلياً).", true);
-                }
-                return;
-            }
-
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             try {
-                const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
+                const servantsCol = getServantsCollection();
                 await addDoc(servantsCol, servantData);
                 showMessage("تم إضافة الخادم بنجاح!");
             } catch (error) {
-                console.error("Error adding servant:", error);
+                console.error("Error adding servant to Firestore:", error);
                 showMessage("فشل إضافة الخادم.", true);
             }
         }
 
-        // UPDATED: Now supports local mode
         async function updateServant(servantId, servantData) {
-            if (isLocalMode) {
-                try {
-                    let servants = getLocalServants();
-                    const index = servants.findIndex(s => s.id === servantId);
-                    if (index !== -1) {
-                        // Preserve the original image if a new one isn't provided
-                        if (!servantData.imageUrl) {
-                            servantData.imageUrl = servants[index].imageUrl;
-                        }
-                        servants[index] = { ...servants[index], ...servantData, id: servantId };
-                        saveLocalServants(servants);
-                        await loadServants();
-                        showMessage("تم تحديث بيانات الخادم بنجاح (محلياً)!");
-                    }
-                } catch (error) {
-                    console.error("Error updating servant locally:", error);
-                    showMessage("فشل تحديث بيانات الخادم (محلياً).", true);
-                }
-                return;
-            }
-
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             try {
-                const servantDoc = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
+                const servantDoc = getServantDoc(servantId);
                 await updateDoc(servantDoc, servantData);
                 showMessage("تم تحديث بيانات الخادم بنجاح!");
             } catch (error) {
-                console.error("Error updating servant:", error);
+                console.error("Error updating servant in Firestore:", error);
                 showMessage("فشل تحديث بيانات الخادم.", true);
             }
         }
 
-        // UPDATED: Now supports local mode
         async function deleteServant(servantId) {
              showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الخادم؟ سيتم حذف جميع بياناته بشكل نهائي.', async () => {
-                if (isLocalMode) {
-                    let servants = getLocalServants();
-                    servants = servants.filter(s => s.id !== servantId);
-                    saveLocalServants(servants);
-                    await loadServants();
-                    showMessage("تم حذف الخادم (محلياً).");
-                    return;
-                }
-
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                 if (!userId || !currentServiceName || !servantId) return;
+                if (!servantId) return;
                 try {
-                    const servantDoc = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
+                    const servantDoc = getServantDoc(servantId);
                     await deleteDoc(servantDoc);
                     showMessage("تم حذف الخادم.");
                 } catch(error) {
-                    console.error("Error deleting servant: ", error);
+                    console.error("Error deleting servant from Firestore: ", error);
                     showMessage("فشل حذف الخادم.", true);
                 }
              });
@@ -795,7 +759,7 @@
             openModal(manualEntryModal);
         }
 
-        // --- ATTENDANCE MANAGEMENT ---
+        // --- ATTENDANCE MANAGEMENT (Using Firestore) ---
         function populateMonths(year) {
             monthSelector.innerHTML = '<option value="">اختر شهر</option>';
             const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
@@ -805,7 +769,6 @@
             monthSelector.disabled = false;
         }
 
-        // UPDATED: Now supports local mode and fixes a bug with status dots
         async function populateFridaysGrid(year, month) {
             fridaysGrid.innerHTML = '';
             const fridays = [];
@@ -817,7 +780,6 @@
                 date.setDate(date.getDate() + 1);
             }
             
-            // FIX: Create a lookup map from the globally fetched attendance cache
             const allAttendanceMap = {};
             attendanceCache.forEach(item => {
                 allAttendanceMap[item.date] = item;
@@ -832,7 +794,6 @@
                 const day = friday.getDate();
                 let buttonHTML = `<button data-date="${dateString}" class="friday-btn p-3 rounded-lg bg-cyan-500 text-white font-bold transition-all duration-200 shadow hover:shadow-lg hover:bg-cyan-600 relative">${day}`;
                 
-                // Use the map for correct status dots
                 const dayData = allAttendanceMap[dateString] || {};
                 
                 let dotsHTML = '<div class="absolute bottom-1 right-1 flex space-x-1 space-x-reverse">';
@@ -857,27 +818,20 @@
             monthSelector.innerHTML = '<option value="">اختر شهر</option>';
             monthSelector.disabled = true;
             fridaysGrid.innerHTML = '';
-            activityButtons.innerHTML = ''; // Clear previous buttons
+            activityButtons.innerHTML = '';
             activityButtons.classList.add('hidden-view');
             attendanceListContainer.classList.add('hidden-view');
         }
         
-        // UPDATED: Now supports local mode
         async function updateActivityButtonsStatus(date) {
             let dayData = {};
-            if (isLocalMode) {
-                const allAttendance = getLocalAttendance();
-                dayData = allAttendance[date] || {};
-            } else {
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, date);
-                    const dayDocSnap = await getDoc(dayDocRef);
-                    dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
-                } catch (error) {
-                    console.error("Failed to fetch activity status:", error);
-                    showMessage("فشل تحميل حالة النشاط.", true);
-                }
+            try {
+                const dayDocRef = getAttendanceDoc(date);
+                const dayDocSnap = await getDoc(dayDocRef);
+                dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
+            } catch (error) {
+                console.error("Failed to fetch activity status from Firestore:", error);
+                showMessage("فشل تحميل حالة النشاط.", true);
             }
 
             activityButtons.innerHTML = ''; // Clear and rebuild
@@ -905,7 +859,6 @@
             activityButtons.classList.remove('hidden-view');
         }
 
-        // UPDATED: Now supports local mode
         async function showActivityChecklist(activityKey, date) {
             currentActivity = activityKey;
             const activity = activityMap.get(activityKey);
@@ -927,20 +880,13 @@
             servantsChecklist.classList.remove('hidden');
 
             let activityData = {};
-            if (isLocalMode) {
-                const allAttendance = getLocalAttendance();
-                const dayData = allAttendance[date] || {};
+            try {
+                const dayDocRef = getAttendanceDoc(date);
+                const dayDocSnap = await getDoc(dayDocRef);
+                const dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
                 activityData = dayData[activityKey] || {};
-            } else {
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, date);
-                    const dayDocSnap = await getDoc(dayDocRef);
-                    const dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
-                    activityData = dayData[activityKey] || {};
-                } catch (error) {
-                    console.error("Failed to fetch checklist data:", error);
-                }
+            } catch (error) {
+                console.error("Failed to fetch checklist data from Firestore:", error);
             }
             
             const attendees = activityData.attendees || [];
@@ -967,7 +913,6 @@
             attendanceListContainer.classList.remove('hidden-view');
         }
 
-        // UPDATED: Now supports local mode
         async function saveActivityAttendance() {
             if (!selectedFriday || !currentActivity) {
                 showMessage("الرجاء اختيار اليوم والنشاط أولاً.", true);
@@ -987,70 +932,46 @@
                 activityUpdate.note = null;
             }
 
-            if (isLocalMode) {
-                try {
-                    const allAttendance = getLocalAttendance();
-                    if (!allAttendance[selectedFriday]) {
-                        allAttendance[selectedFriday] = {};
-                    }
-                    allAttendance[selectedFriday][currentActivity] = activityUpdate;
-                    saveLocalAttendance(allAttendance);
-                } catch (error) {
-                    console.error("Error saving attendance locally:", error);
-                    showMessage("فشل حفظ الحضور (محلياً).", true);
-                    return;
+            try {
+                const dayDocRef = getAttendanceDoc(selectedFriday);
+                const updates = { [currentActivity]: activityUpdate };
+                // Using set with merge:true will create the document if it doesn't exist,
+                // or update the specific activity field without overwriting other activities on the same day.
+                await setDoc(dayDocRef, updates, { merge: true });
+                
+                const activityName = activityMap.get(currentActivity).name;
+                showMessage(`تم حفظ حضور "${activityName}" بنجاح.`);
+                attendanceListContainer.classList.add('hidden-view');
+                document.querySelectorAll('.activity-btn').forEach(btn => btn.classList.remove('active'));
+                
+                await loadAttendanceDataForReports(); // Refresh all attendance data
+                await updateActivityButtonsStatus(selectedFriday); // Update button status
+                
+                const year = parseInt(yearSelector.value);
+                const month = parseInt(monthSelector.value);
+                if (!isNaN(year) && !isNaN(month) && month >= 0) {
+                    await populateFridaysGrid(year, month); // Redraw fridays grid with new status dots
                 }
-            } else {
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, selectedFriday);
-                    const updates = { [currentActivity]: activityUpdate };
-                    await setDoc(dayDocRef, updates, { merge: true });
-                } catch (error) {
-                    console.error("Error saving activity attendance:", error);
-                    showMessage("فشل حفظ الحضور.", true);
-                    return;
-                }
-            }
 
-            // Common success logic for both modes
-            const activityName = activityMap.get(currentActivity).name;
-            showMessage(`تم حفظ حضور "${activityName}" بنجاح.`);
-            attendanceListContainer.classList.add('hidden-view');
-            document.querySelectorAll('.activity-btn').forEach(btn => btn.classList.remove('active'));
-            
-            await loadAttendanceDataForReports(); // Refresh all attendance data
-            await updateActivityButtonsStatus(selectedFriday); // Update button status
-            
-            const year = parseInt(yearSelector.value);
-            const month = parseInt(monthSelector.value);
-            if (!isNaN(year) && !isNaN(month) && month >= 0) {
-                await populateFridaysGrid(year, month); // Redraw fridays grid with new status dots
+            } catch (error) {
+                console.error("Error saving activity attendance to Firestore:", error);
+                showMessage("فشل حفظ الحضور.", true);
             }
         }
 
-        // --- REPORTS & STATISTICS ---
-        // UPDATED: Now supports local mode
+        // --- REPORTS & STATISTICS (Using Firestore data) ---
         function loadAttendanceDataForReports() {
              return new Promise(async (resolve) => {
-                if (isLocalMode) {
-                    const localData = getLocalAttendance();
-                    // Convert object to array format expected by the rest of the code
-                    attendanceCache = Object.entries(localData).map(([date, data]) => ({ date, ...data }));
-                    return resolve();
-                }
-
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                if (!userId || !currentServiceName) {
+                if (!db || !currentServiceName) {
                     attendanceCache = [];
                     return resolve();
                 }
-                const attendanceCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`);
+                const attendanceCol = getAttendanceCollection();
                 try {
                     const snapshot = await getDocs(attendanceCol);
                     attendanceCache = snapshot.docs.map(doc => ({ date: doc.id, ...doc.data() }));
                 } catch (error) {
-                    console.error("Error loading attendance data for reports:", error);
+                    console.error("Error loading attendance data for reports from Firestore:", error);
                     attendanceCache = [];
                 }
                 resolve();
@@ -1396,6 +1317,11 @@
                 e.preventDefault();
                 const file = document.getElementById('excelFile').files[0];
                 if (!file) return;
+
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                loadingOverlay.classList.add('flex');
+                loadingOverlay.classList.remove('hidden-view');
+
                 const reader = new FileReader();
                 reader.onload = async (event) => {
                     try {
@@ -1409,6 +1335,9 @@
                         });
                         
                         let importedCount = 0;
+                        const batch = writeBatch(db);
+                        const servantsCol = getServantsCollection();
+
                         for (const servant of json) {
                             if (!servant.name) continue;
                             if (servant.dob && !isNaN(servant.dob)) {
@@ -1422,15 +1351,22 @@
                                     }
                                 }
                             }
-                            await addServant(servant);
+                            // Add each new servant to a batch write
+                            const newServantRef = doc(servantsCol);
+                            batch.set(newServantRef, servant);
                             importedCount++;
                         }
+                        await batch.commit(); // Commit the batch write
+                        
                         closeModal(importModal);
                         importForm.reset();
                         showMessage(`تم استيراد ${importedCount} خادم بنجاح.`);
                     } catch (err) {
-                        showMessage('حدث خطأ أثناء قراءة الملف.', true);
+                        showMessage('حدث خطأ أثناء قراءة أو استيراد الملف.', true);
                         console.error(err);
+                    } finally {
+                        loadingOverlay.classList.add('hidden-view');
+                        loadingOverlay.classList.remove('flex');
                     }
                 };
                 reader.readAsArrayBuffer(file);
@@ -1449,7 +1385,6 @@
                 attendanceListContainer.classList.add('hidden-view');
             });
 
-            // UPDATED: Now async to load data before populating grid
             monthSelector.addEventListener('change', async () => {
                 const year = parseInt(yearSelector.value);
                 const month = parseInt(monthSelector.value);
@@ -1527,6 +1462,10 @@
             servicesGrid.addEventListener('click', (e) => {
                 const card = e.target.closest('.service-card');
                 if (card) {
+                    if (!db || !auth) {
+                        showMessage("النظام غير متصل بقاعدة البيانات. الرجاء المحاولة مرة أخرى.", true);
+                        return;
+                    }
                     currentServiceName = card.dataset.serviceName;
                     document.getElementById('modalTitle').textContent = `الدخول إلى ${currentServiceName}`;
                     openModal(loginModal);
