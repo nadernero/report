@@ -331,8 +331,10 @@
         let selectedFriday = '';
         let activityAttendanceChart = null;
         let currentReportType = 'individual';
-        let monthlyAttendanceCache = {};
         
+        // NEW: Flag to detect if running locally without Firebase
+        let isLocalMode = false;
+
         const activities = [
             { key: 'visiting', name: 'الافتقاد', icon: 'fa-hand-holding-heart', color: 'bg-orange-500', hover: 'hover:bg-orange-600' },
             { key: 'preparation', name: 'التحضير', icon: 'fa-book-open', color: 'bg-yellow-500', hover: 'hover:bg-yellow-600' },
@@ -383,11 +385,33 @@
         const noActivityLabel = document.getElementById('noActivityLabel');
         const noActivityReason = document.getElementById('noActivityReason');
 
+        // --- LOCAL STORAGE HELPERS (for local mode) ---
+        const getLocalServants = () => {
+            if (!currentServiceName) return [];
+            const key = `church-app-servants-${currentServiceName}`;
+            return JSON.parse(localStorage.getItem(key) || '[]');
+        };
+
+        const saveLocalServants = (servants) => {
+            if (!currentServiceName) return;
+            const key = `church-app-servants-${currentServiceName}`;
+            localStorage.setItem(key, JSON.stringify(servants));
+        };
+
+        const getLocalAttendance = () => {
+            if (!currentServiceName) return {};
+            const key = `church-app-attendance-${currentServiceName}`;
+            return JSON.parse(localStorage.getItem(key) || '{}');
+        };
+
+        const saveLocalAttendance = (attendance) => {
+            if (!currentServiceName) return;
+            const key = `church-app-attendance-${currentServiceName}`;
+            localStorage.setItem(key, JSON.stringify(attendance));
+        };
+
         // --- FIREBASE INITIALIZATION ---
-        async function initializeFirebase() {
-            try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = {
+    const firebaseConfig = {
   apiKey: "AIzaSyDqnWPGTAvIWakd0Wl14uuznrCy2oo8Iws",
   authDomain: "church-service-app-4f180.firebaseapp.com",
   projectId: "church-service-app-4f180",
@@ -395,6 +419,10 @@ const firebaseConfig = {
   messagingSenderId: "431475695196",
   appId: "1:431475695196:web:4bd4389448eb94804e1099"
 };
+
+                isLocalMode = false;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = JSON.parse(__firebase_config);
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -417,7 +445,9 @@ const firebaseConfig = {
                 });
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
-                showMessage("فشل تهيئة النظام.", true);
+                showMessage("فشل تهيئة النظام. سيتم التشغيل في الوضع المحلي.", true);
+                isLocalMode = true; // Fallback to local mode on error
+                userId = 'localUser';
             }
         }
 
@@ -528,8 +558,17 @@ const firebaseConfig = {
             servantsTableBody.appendChild(row);
         }
 
+        // UPDATED: Now supports local mode
         function loadServants() {
             return new Promise((resolve) => {
+                if (isLocalMode) {
+                    servantsCache = getLocalServants();
+                    servantsCache.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+                    renderServantsTable(servantsCache);
+                    populateReportServantSelector();
+                    return resolve();
+                }
+
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 if (!userId || !currentServiceName) return resolve();
                 const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
@@ -538,7 +577,7 @@ const firebaseConfig = {
                 
                 servantsUnsubscribe = onSnapshot(servantsCol, (snapshot) => {
                     servantsCache = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-                    servantsCache.sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'ar'));
+                    servantsCache.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
                     renderServantsTable(servantsCache);
                     populateReportServantSelector();
                     resolve();
@@ -640,7 +679,23 @@ const firebaseConfig = {
             }
         }
 
+        // UPDATED: Now supports local mode
         async function addServant(servantData) {
+            if (isLocalMode) {
+                try {
+                    const servants = getLocalServants();
+                    servantData.id = `local-${Date.now()}`; // Generate a unique local ID
+                    servants.push(servantData);
+                    saveLocalServants(servants);
+                    await loadServants(); // Reload to update table
+                    showMessage("تم إضافة الخادم بنجاح (محلياً)!");
+                } catch (error) {
+                    console.error("Error adding servant locally:", error);
+                    showMessage("فشل إضافة الخادم (محلياً).", true);
+                }
+                return;
+            }
+
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             try {
                 const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
@@ -652,7 +707,29 @@ const firebaseConfig = {
             }
         }
 
+        // UPDATED: Now supports local mode
         async function updateServant(servantId, servantData) {
+            if (isLocalMode) {
+                try {
+                    let servants = getLocalServants();
+                    const index = servants.findIndex(s => s.id === servantId);
+                    if (index !== -1) {
+                        // Preserve the original image if a new one isn't provided
+                        if (!servantData.imageUrl) {
+                            servantData.imageUrl = servants[index].imageUrl;
+                        }
+                        servants[index] = { ...servants[index], ...servantData, id: servantId };
+                        saveLocalServants(servants);
+                        await loadServants();
+                        showMessage("تم تحديث بيانات الخادم بنجاح (محلياً)!");
+                    }
+                } catch (error) {
+                    console.error("Error updating servant locally:", error);
+                    showMessage("فشل تحديث بيانات الخادم (محلياً).", true);
+                }
+                return;
+            }
+
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             try {
                 const servantDoc = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
@@ -664,11 +741,20 @@ const firebaseConfig = {
             }
         }
 
+        // UPDATED: Now supports local mode
         async function deleteServant(servantId) {
-             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-             if (!userId || !currentServiceName || !servantId) return;
-             
              showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الخادم؟ سيتم حذف جميع بياناته بشكل نهائي.', async () => {
+                if (isLocalMode) {
+                    let servants = getLocalServants();
+                    servants = servants.filter(s => s.id !== servantId);
+                    saveLocalServants(servants);
+                    await loadServants();
+                    showMessage("تم حذف الخادم (محلياً).");
+                    return;
+                }
+
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                 if (!userId || !currentServiceName || !servantId) return;
                 try {
                     const servantDoc = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
                     await deleteDoc(servantDoc);
@@ -718,6 +804,7 @@ const firebaseConfig = {
             monthSelector.disabled = false;
         }
 
+        // UPDATED: Now supports local mode and fixes a bug with status dots
         async function populateFridaysGrid(year, month) {
             fridaysGrid.innerHTML = '';
             const fridays = [];
@@ -728,6 +815,12 @@ const firebaseConfig = {
                 }
                 date.setDate(date.getDate() + 1);
             }
+            
+            // FIX: Create a lookup map from the globally fetched attendance cache
+            const allAttendanceMap = {};
+            attendanceCache.forEach(item => {
+                allAttendanceMap[item.date] = item;
+            });
 
             for (const friday of fridays) {
                 const y = friday.getFullYear();
@@ -738,7 +831,8 @@ const firebaseConfig = {
                 const day = friday.getDate();
                 let buttonHTML = `<button data-date="${dateString}" class="friday-btn p-3 rounded-lg bg-cyan-500 text-white font-bold transition-all duration-200 shadow hover:shadow-lg hover:bg-cyan-600 relative">${day}`;
                 
-                const dayData = monthlyAttendanceCache[dateString] || {};
+                // Use the map for correct status dots
+                const dayData = allAttendanceMap[dateString] || {};
                 
                 let dotsHTML = '<div class="absolute bottom-1 right-1 flex space-x-1 space-x-reverse">';
                 activities.forEach(act => {
@@ -755,7 +849,8 @@ const firebaseConfig = {
 
         function loadAttendancePage() {
             yearSelector.innerHTML = '<option value="">اختر سنة</option>';
-            for (let i = 2030; i >= 2025; i--) {
+            const currentYear = new Date().getFullYear();
+            for (let i = currentYear + 5; i >= currentYear - 5; i--) {
                 yearSelector.innerHTML += `<option value="${i}">${i}</option>`;
             }
             monthSelector.innerHTML = '<option value="">اختر شهر</option>';
@@ -766,10 +861,23 @@ const firebaseConfig = {
             attendanceListContainer.classList.add('hidden-view');
         }
         
+        // UPDATED: Now supports local mode
         async function updateActivityButtonsStatus(date) {
-            const dayDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/services/${currentServiceName}/attendance`, date);
-            const dayDocSnap = await getDoc(dayDocRef);
-            const dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
+            let dayData = {};
+            if (isLocalMode) {
+                const allAttendance = getLocalAttendance();
+                dayData = allAttendance[date] || {};
+            } else {
+                try {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, date);
+                    const dayDocSnap = await getDoc(dayDocRef);
+                    dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
+                } catch (error) {
+                    console.error("Failed to fetch activity status:", error);
+                    showMessage("فشل تحميل حالة النشاط.", true);
+                }
+            }
 
             activityButtons.innerHTML = ''; // Clear and rebuild
             activities.forEach(act => {
@@ -796,7 +904,7 @@ const firebaseConfig = {
             activityButtons.classList.remove('hidden-view');
         }
 
-
+        // UPDATED: Now supports local mode
         async function showActivityChecklist(activityKey, date) {
             currentActivity = activityKey;
             const activity = activityMap.get(activityKey);
@@ -817,10 +925,22 @@ const firebaseConfig = {
             noActivityLabel.textContent = `لا يوجد ${activity.name} لهذا اليوم`;
             servantsChecklist.classList.remove('hidden');
 
-            const dayDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/services/${currentServiceName}/attendance`, date);
-            const dayDocSnap = await getDoc(dayDocRef);
-            const dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
-            const activityData = dayData[activityKey] || {};
+            let activityData = {};
+            if (isLocalMode) {
+                const allAttendance = getLocalAttendance();
+                const dayData = allAttendance[date] || {};
+                activityData = dayData[activityKey] || {};
+            } else {
+                try {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, date);
+                    const dayDocSnap = await getDoc(dayDocRef);
+                    const dayData = dayDocSnap.exists() ? dayDocSnap.data() : {};
+                    activityData = dayData[activityKey] || {};
+                } catch (error) {
+                    console.error("Failed to fetch checklist data:", error);
+                }
+            }
             
             const attendees = activityData.attendees || [];
             
@@ -846,54 +966,79 @@ const firebaseConfig = {
             attendanceListContainer.classList.remove('hidden-view');
         }
 
+        // UPDATED: Now supports local mode
         async function saveActivityAttendance() {
             if (!selectedFriday || !currentActivity) {
                 showMessage("الرجاء اختيار اليوم والنشاط أولاً.", true);
                 return;
             }
 
-            const dayDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/services/${currentServiceName}/attendance`, selectedFriday);
-            const updates = {};
-            
+            const activityUpdate = {};
             if (noActivityCheck.checked) {
-                updates[currentActivity] = {
-                    attendees: [],
-                    note: noActivityReason.value || 'تم الإلغاء'
-                };
+                activityUpdate.attendees = [];
+                activityUpdate.note = noActivityReason.value || 'تم الإلغاء';
             } else {
                 const attendees = [];
                 document.querySelectorAll('#servantsChecklist input[type="checkbox"]:checked').forEach(checkbox => {
                     attendees.push(checkbox.dataset.servantId);
                 });
-                updates[currentActivity] = { attendees: attendees, note: null };
+                activityUpdate.attendees = attendees;
+                activityUpdate.note = null;
             }
 
-            try {
-                await setDoc(dayDocRef, updates, { merge: true });
-                const activityName = activityMap.get(currentActivity).name;
-                showMessage(`تم حفظ حضور "${activityName}" بنجاح.`);
-                attendanceListContainer.classList.add('hidden-view');
-                document.querySelectorAll('.activity-btn').forEach(btn => btn.classList.remove('active'));
-                await loadAttendanceDataForReports(); // Full refresh for reports
-                
-                // Quick update for local cache and UI
-                monthlyAttendanceCache[selectedFriday] = { ...monthlyAttendanceCache[selectedFriday], ...updates };
-                await updateActivityButtonsStatus(selectedFriday);
-                const year = parseInt(yearSelector.value);
-                const month = parseInt(monthSelector.value);
-                if (year && month >= 0) {
-                    populateFridaysGrid(year, month);
+            if (isLocalMode) {
+                try {
+                    const allAttendance = getLocalAttendance();
+                    if (!allAttendance[selectedFriday]) {
+                        allAttendance[selectedFriday] = {};
+                    }
+                    allAttendance[selectedFriday][currentActivity] = activityUpdate;
+                    saveLocalAttendance(allAttendance);
+                } catch (error) {
+                    console.error("Error saving attendance locally:", error);
+                    showMessage("فشل حفظ الحضور (محلياً).", true);
+                    return;
                 }
+            } else {
+                try {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, selectedFriday);
+                    const updates = { [currentActivity]: activityUpdate };
+                    await setDoc(dayDocRef, updates, { merge: true });
+                } catch (error) {
+                    console.error("Error saving activity attendance:", error);
+                    showMessage("فشل حفظ الحضور.", true);
+                    return;
+                }
+            }
 
-            } catch (error) {
-                console.error("Error saving activity attendance:", error);
-                showMessage("فشل حفظ الحضور.", true);
+            // Common success logic for both modes
+            const activityName = activityMap.get(currentActivity).name;
+            showMessage(`تم حفظ حضور "${activityName}" بنجاح.`);
+            attendanceListContainer.classList.add('hidden-view');
+            document.querySelectorAll('.activity-btn').forEach(btn => btn.classList.remove('active'));
+            
+            await loadAttendanceDataForReports(); // Refresh all attendance data
+            await updateActivityButtonsStatus(selectedFriday); // Update button status
+            
+            const year = parseInt(yearSelector.value);
+            const month = parseInt(monthSelector.value);
+            if (!isNaN(year) && !isNaN(month) && month >= 0) {
+                await populateFridaysGrid(year, month); // Redraw fridays grid with new status dots
             }
         }
 
         // --- REPORTS & STATISTICS ---
+        // UPDATED: Now supports local mode
         function loadAttendanceDataForReports() {
              return new Promise(async (resolve) => {
+                if (isLocalMode) {
+                    const localData = getLocalAttendance();
+                    // Convert object to array format expected by the rest of the code
+                    attendanceCache = Object.entries(localData).map(([date, data]) => ({ date, ...data }));
+                    return resolve();
+                }
+
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 if (!userId || !currentServiceName) {
                     attendanceCache = [];
@@ -1026,7 +1171,7 @@ const firebaseConfig = {
 
             const overallAverage = overallPercentages.length > 0 ? Math.round(overallPercentages.reduce((a, b) => a + b, 0) / overallPercentages.length) : 0;
              reportHTML += `
-                <div class="text-center p-4 rounded-lg ${getPercentageBGColor(overallAverage)}">
+                <div class="text-center p-4 rounded-lg ${getPercentageBGColor(overallAverage)} col-span-2 md:col-span-1">
                     <div class="font-bold text-lg">المتوسط العام</div>
                     <div class="text-3xl font-bold my-2">${overallAverage}%</div>
                     <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-600 mt-2">
@@ -1090,7 +1235,7 @@ const firebaseConfig = {
 
             const overallAverage = percentages.length > 0 ? Math.round(percentages.reduce((a, b) => a + b, 0) / percentages.length) : 0;
             reportHTML += `
-                <div class="text-center p-4 rounded-lg ${getPercentageBGColor(overallAverage)}">
+                <div class="text-center p-4 rounded-lg ${getPercentageBGColor(overallAverage)} col-span-2 md:col-span-1">
                     <div class="font-bold text-lg">المتوسط العام</div>
                     <div class="text-3xl font-bold my-2">${overallAverage}%</div>
                      <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-600 mt-2">
@@ -1120,6 +1265,7 @@ const firebaseConfig = {
 
             servantsCache.forEach(servant => {
                 let totalAttended = 0, totalMeetings = 0;
+                let percentages = [];
                 tableHTML += `<tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"><td class="p-3 font-semibold">${servant.name}</td>`;
                 activities.forEach(act => {
                     let attended = 0, meetings = 0;
@@ -1129,11 +1275,11 @@ const firebaseConfig = {
                             if (day[act.key].attendees.includes(servant.id)) attended++;
                         }
                     });
-                    totalAttended += attended; totalMeetings += meetings;
                     const percentage = meetings > 0 ? Math.round((attended / meetings) * 100) : 0;
+                    percentages.push(percentage);
                     tableHTML += `<td class="p-3 text-center">${percentage}% <span class="text-xs text-gray-500">(${attended}/${meetings})</span></td>`;
                 });
-                const overallPercentage = totalMeetings > 0 ? Math.round((totalAttended / totalMeetings) * 100) : 0;
+                const overallPercentage = percentages.length > 0 ? Math.round(percentages.reduce((a,b) => a + b, 0) / percentages.length) : 0;
                 tableHTML += `<td class="p-3 text-center font-bold text-cyan-600">${overallPercentage}%</td></tr>`;
             });
             tableHTML += `</tbody>`;
@@ -1260,6 +1406,8 @@ const firebaseConfig = {
                             header: ['id', 'image', 'name', 'nationalId', 'mobile', 'currentService', 'address', 'dob', 'qualification', 'job', 'confessionFather'],
                             range: 4 
                         });
+                        
+                        let importedCount = 0;
                         for (const servant of json) {
                             if (!servant.name) continue;
                             if (servant.dob && !isNaN(servant.dob)) {
@@ -1274,10 +1422,11 @@ const firebaseConfig = {
                                 }
                             }
                             await addServant(servant);
+                            importedCount++;
                         }
                         closeModal(importModal);
                         importForm.reset();
-                        showMessage(`تم استيراد ${json.length} خادم بنجاح.`);
+                        showMessage(`تم استيراد ${importedCount} خادم بنجاح.`);
                     } catch (err) {
                         showMessage('حدث خطأ أثناء قراءة الملف.', true);
                         console.error(err);
@@ -1299,11 +1448,13 @@ const firebaseConfig = {
                 attendanceListContainer.classList.add('hidden-view');
             });
 
-            monthSelector.addEventListener('change', () => {
+            // UPDATED: Now async to load data before populating grid
+            monthSelector.addEventListener('change', async () => {
                 const year = parseInt(yearSelector.value);
                 const month = parseInt(monthSelector.value);
-                if (year && month >= 0) {
-                    populateFridaysGrid(year, month);
+                if (!isNaN(year) && !isNaN(month) && month >= 0) {
+                    await loadAttendanceDataForReports(); // Load data first
+                    await populateFridaysGrid(year, month); // Then populate
                 } else {
                     fridaysGrid.innerHTML = '';
                 }
