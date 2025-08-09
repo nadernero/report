@@ -411,14 +411,15 @@
         };
 
         // --- FIREBASE INITIALIZATION ---
-    const firebaseConfig = {
-  apiKey: "AIzaSyDqnWPGTAvIWakd0Wl14uuznrCy2oo8Iws",
-  authDomain: "church-service-app-4f180.firebaseapp.com",
-  projectId: "church-service-app-4f180",
-  storageBucket: "church-service-app-4f180.firebasestorage.app",
-  messagingSenderId: "431475695196",
-  appId: "1:431475695196:web:4bd4389448eb94804e1099"
-};
+        async function initializeFirebase() {
+            try {
+                // UPDATED: Check if running locally
+                if (typeof __firebase_config === 'undefined' || !__firebase_config || __firebase_config === '{}') {
+                    console.warn("Firebase config not found. Running in LOCAL MODE. Data will be saved in your browser's local storage.");
+                    isLocalMode = true;
+                    userId = 'localUser'; // Use a static ID for local mode
+                    return; // Stop Firebase initialization
+                }
 
                 isLocalMode = false;
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
