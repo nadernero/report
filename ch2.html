@@ -308,7 +308,7 @@
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc, getDoc, getDocs, updateDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- GLOBAL VARS & STATE ---
@@ -389,13 +389,17 @@
             loadingOverlay.classList.add('flex');
             loadingOverlay.classList.remove('hidden-view');
 
-            try {
-                // Check if Firebase config is provided. If not, the app cannot run online.
-                if (typeof __firebase_config === 'undefined' || !__firebase_config || __firebase_config === '{}') {
-                    throw new Error("Firebase config not found. The application cannot connect to the online database.");
-                }
+            // User-provided Firebase configuration
+            const firebaseConfig = {
+              apiKey: "AIzaSyDqnWPGTAvIWakd0Wl14uuznrCy2oo8Iws",
+              authDomain: "church-service-app-4f180.firebaseapp.com",
+              projectId: "church-service-app-4f180",
+              storageBucket: "church-service-app-4f180.appspot.com",
+              messagingSenderId: "431475695196",
+              appId: "1:431475695196:web:4bd4389448eb94804e1099"
+            };
 
-                const firebaseConfig = JSON.parse(__firebase_config);
+            try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -408,16 +412,12 @@
                         loadingOverlay.classList.add('hidden-view');
                         loadingOverlay.classList.remove('flex');
                     } else {
-                        // If no user, try to sign in
+                        // If no user, sign in anonymously as a fallback
                         try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            await signInAnonymously(auth);
                         } catch (error) {
-                            console.error("Sign-in failed:", error);
-                            showMessage("فشل الاتصال بقاعدة البيانات. الرجاء تحديث الصفحة.", true);
+                            console.error("Anonymous sign-in failed:", error);
+                            showMessage("فشل المصادقة مع قاعدة البيانات.", true);
                             loadingOverlay.classList.add('hidden-view');
                             loadingOverlay.classList.remove('flex');
                         }
@@ -519,22 +519,22 @@
         // --- FIRESTORE PATHS ---
         // Using a public path so all users can access the same service data.
         const getServantsCollection = () => {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = 'church-service-app-4f180'; // Using static Project ID
             return collection(db, `artifacts/${appId}/public/data/services/${currentServiceName}/servants`);
         };
 
         const getAttendanceCollection = () => {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = 'church-service-app-4f180'; // Using static Project ID
             return collection(db, `artifacts/${appId}/public/data/services/${currentServiceName}/attendance`);
         };
 
         const getAttendanceDoc = (date) => {
-             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+             const appId = 'church-service-app-4f180'; // Using static Project ID
              return doc(db, `artifacts/${appId}/public/data/services/${currentServiceName}/attendance`, date);
         };
 
         const getServantDoc = (servantId) => {
-             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+             const appId = 'church-service-app-4f180'; // Using static Project ID
              return doc(db, `artifacts/${appId}/public/data/services/${currentServiceName}/servants`, servantId);
         };
 
