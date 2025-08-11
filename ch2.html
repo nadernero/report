@@ -637,7 +637,7 @@
             }
             try {
                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                const colRef = collection(db, `artifacts/${appId}/data/services/${serviceName}/${collectionName}`);
+                const colRef = collection(db, 'services', serviceName, collectionName);
                 const snapshot = await getDocs(colRef);
                 if (collectionName === 'attendance') {
                     const attendanceData = {};
@@ -666,7 +666,7 @@
                 }
                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 if (!userId || !currentServiceName) return resolve();
-                const servantsCol = collection(db, `artifacts/${appId}/data/services/${currentServiceName}/servants`);
+                const servantsCol = collection(db, 'services', currentServiceName, 'servants');
                 if (servantsUnsubscribe) servantsUnsubscribe();
                 servantsUnsubscribe = onSnapshot(servantsCol, (snapshot) => {
                     servantsCache = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -691,7 +691,7 @@
             }
             try {
                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                const attendanceCol = collection(db, `artifacts/${appId}/data/services/${currentServiceName}/attendance`);
+                const attendanceCol = collection(db, 'services', currentServiceName, 'attendance');
                 const q = query(attendanceCol, where('year', '==', Number(year)));
                 const snapshot = await getDocs(q);
                 attendanceYearCache = {};
@@ -821,7 +821,7 @@
             }
             try {
                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                const servantsCol = collection(db, `artifacts/${appId}/data/services/${currentServiceName}/servants`);
+                const servantsCol = collection(db, 'services', currentServiceName, 'servants');
                 await addDoc(servantsCol, servantData);
                 showMessage("تم إضافة الخادم بنجاح!");
             } catch (error) {
@@ -845,7 +845,7 @@
             }
             try {
                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                const servantDocRef = doc(db, `artifacts/${appId}/data/services/${currentServiceName}/servants`, servantId);
+                const servantDocRef = doc(db, 'services', currentServiceName, 'servants', servantId);
                 await updateDoc(servantDocRef, servantData);
                 showMessage("تم تحديث بيانات الخادم بنجاح!");
             } catch (error) {
@@ -869,7 +869,7 @@
                 }
                 try {
                     const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                    const servantDocRef = doc(db, `artifacts/${appId}/data/services/${currentServiceName}/servants`, servantId);
+                    const servantDocRef = doc(db, 'services', currentServiceName, 'servants', servantId);
                     await deleteDoc(servantDocRef);
                     showMessage("تم حذف الخادم بنجاح.");
                 } catch (error) {
@@ -1055,7 +1055,7 @@
             } else {
                 try {
                     const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                    const dayDocRef = doc(db, `artifacts/${appId}/data/services/${currentServiceName}/attendance`, selectedFriday);
+                    const dayDocRef = doc(db, 'services', currentServiceName, 'attendance', selectedFriday);
                     await setDoc(dayDocRef, dayData); 
                     attendanceYearCache[selectedFriday] = dayData;
                 } catch (error) {
@@ -1451,8 +1451,8 @@
                                 showMessage("تم استعادة البيانات بنجاح!");
                             } else {
                                 const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
-                                const servantsColRef = collection(db, `artifacts/${appId}/data/services/${currentServiceName}/servants`);
-                                const attendanceColRef = collection(db, `artifacts/${appId}/data/services/${currentServiceName}/attendance`);
+                                const servantsColRef = collection(db, 'services', currentServiceName, 'servants');
+                                const attendanceColRef = collection(db, 'services', currentServiceName, 'attendance');
 
                                 const deleteBatch = writeBatch(db);
                                 const existingServants = await getDocs(servantsColRef);
