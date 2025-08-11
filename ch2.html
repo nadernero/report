@@ -470,6 +470,11 @@
         let reportChart2 = null;
         let homeChart = null;
         let adminChart = null;
+        // FIX: Auth Ready Promise
+        let authReadyPromiseResolver;
+        const authReady = new Promise(resolve => {
+            authReadyPromiseResolver = resolve;
+        });
 
 
         // --- DOM ELEMENTS CACHE ---
@@ -536,6 +541,7 @@
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
+                        authReadyPromiseResolver(); // Resolve the promise
                     } else {
                         try {
                            await signInAnonymously(auth);
@@ -565,6 +571,7 @@
         }
 
         async function showDashboard() {
+            await authReady;
             DOMElements.loginOrServicesView.classList.add('hidden-view');
             DOMElements.mainDashboard.classList.remove('hidden-view');
             document.getElementById('sidebarServiceName').textContent = currentServiceName;
@@ -624,6 +631,7 @@
 
         // --- DATA FETCHING ---
         async function fetchData(collectionName, serviceName) {
+            await authReady;
             if (isLocalMode) {
                 return getLocalData(`church-app-${collectionName}-${serviceName}`) || (collectionName === 'attendance' ? {} : []);
             }
@@ -647,7 +655,8 @@
         }
 
         function loadServants() {
-            return new Promise((resolve) => {
+            return new Promise(async (resolve) => {
+                await authReady;
                 if (isLocalMode) {
                     servantsCache = getLocalServants(currentServiceName);
                     servantsCache.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -675,6 +684,7 @@
         }
         
         async function loadAttendanceForYear(year) {
+            await authReady;
             if (isLocalMode) {
                 attendanceYearCache = getLocalAttendance(currentServiceName);
                 return;
@@ -696,6 +706,7 @@
         }
         
         async function loadAllServicesData() {
+            await authReady;
             showLoading(true);
             const servicesToFetch = services.filter(s => s.name !== 'الامين العام');
             
@@ -798,6 +809,7 @@
         }
 
         async function addServant(servantData) {
+            await authReady;
             if (isLocalMode) {
                 const servants = getLocalServants(currentServiceName);
                 servantData.id = `local-${Date.now()}`;
@@ -819,6 +831,7 @@
         }
         
         async function updateServant(servantId, servantData) {
+            await authReady;
             if (isLocalMode) {
                 let servants = getLocalServants(currentServiceName);
                 const servantIndex = servants.findIndex(s => s.id === servantId);
@@ -842,6 +855,7 @@
         }
 
         async function deleteServant(servantId) {
+            await authReady;
             showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الخادم؟ سيتم حذف جميع بياناته بشكل نهائي.', async () => {
                 showLoading(true);
                 if (isLocalMode) {
@@ -1016,6 +1030,7 @@
         }
         
         async function saveActivityAttendance() {
+            await authReady;
             if (!selectedFriday || !currentActivity) return showMessage("الرجاء اختيار اليوم والنشاط أولاً.", true);
             
             const [year, month, day] = selectedFriday.split('-').map(Number);
@@ -1082,6 +1097,7 @@
         }
 
         async function loadReportsPage() {
+            await authReady;
             DOMElements.reportOutput.classList.add('hidden-view');
             const today = new Date();
             const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1364,6 +1380,7 @@
 
         // --- Backup and Restore Functions ---
         async function backupData() {
+            await authReady;
             showLoading(true);
             try {
                 const servants = isLocalMode ? getLocalServants(currentServiceName) : await fetchData('servants', currentServiceName);
@@ -1423,6 +1440,7 @@
                         `;
 
                         showConfirm("تأكيد الاستعادة", confirmationMessage, async () => {
+                            await authReady;
                             showLoading(true);
                             const { servants, attendance } = backupObject.data;
                             if (isLocalMode) {
@@ -1549,6 +1567,7 @@
         }
 
         async function updateHomePageDashboard() {
+            await authReady;
             DOMElements.serviceDashboardContainer.classList.toggle('hidden-view', isGeneralSecretaryMode);
             DOMElements.adminDashboardContainer.classList.toggle('hidden-view', !isGeneralSecretaryMode);
 
