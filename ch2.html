@@ -433,7 +433,7 @@
             { name: "خدمة خامسة وسادسة أولاد", icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />', color: 'purple' },
             { name: "خدمة الكورال والأنشطة", icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 6l12-3" />', color: 'teal' },
             { name: "خدمة وسائل الإيضاح", icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />', color: 'orange' },
-            { name: "الامين العام", icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v2h8z" />', color: 'gray' }
+            { name: "الامين العام", icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v2h8z" />', color: 'blue' }
         ];
         
         const activities = [
@@ -518,14 +518,18 @@
         // --- CORE APP LOGIC ---
         async function initializeFirebase() {
             try {
-                if (typeof __firebase_config === 'undefined' || !__firebase_config || __firebase_config === '{}') {
-                    isLocalMode = true;
-                    userId = 'localUser';
-                    console.warn("Firebase config not found. Running in LOCAL MODE.");
-                    return;
-                }
+                // --- Firebase Configuration ---
+                const firebaseConfig = {
+                  apiKey: "AIzaSyDqnWPGTAvIWakd0Wl14uuznrCy2oo8Iws",
+                  authDomain: "church-service-app-4f180.firebaseapp.com",
+                  projectId: "church-service-app-4f180",
+                  storageBucket: "church-service-app-4f180.appspot.com",
+                  messagingSenderId: "431475695196",
+                  appId: "1:431475695196:web:4bd4389448eb94804e1099"
+                };
+                // -----------------------------
+
                 isLocalMode = false;
-                const firebaseConfig = JSON.parse(__firebase_config);
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -534,11 +538,7 @@
                         userId = user.uid;
                     } else {
                         try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                           await signInAnonymously(auth);
                         } catch (error) {
                             console.error("Sign-in failed:", error);
                             showMessage("فشل الاتصال بقاعدة البيانات", true);
@@ -628,7 +628,7 @@
                 return getLocalData(`church-app-${collectionName}-${serviceName}`) || (collectionName === 'attendance' ? {} : []);
             }
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 const colRef = collection(db, `artifacts/${appId}/users/${userId}/services/${serviceName}/${collectionName}`);
                 const snapshot = await getDocs(colRef);
                 if (collectionName === 'attendance') {
@@ -655,7 +655,7 @@
                     populateReportServantSelector();
                     return resolve();
                 }
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 if (!userId || !currentServiceName) return resolve();
                 const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
                 if (servantsUnsubscribe) servantsUnsubscribe();
@@ -680,7 +680,7 @@
                 return;
             }
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 const attendanceCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`);
                 const q = query(attendanceCol, where('year', '==', Number(year)));
                 const snapshot = await getDocs(q);
@@ -808,7 +808,7 @@
                 return;
             }
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 const servantsCol = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
                 await addDoc(servantsCol, servantData);
                 showMessage("تم إضافة الخادم بنجاح!");
@@ -831,7 +831,7 @@
                 return;
             }
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                 const servantDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
                 await updateDoc(servantDocRef, servantData);
                 showMessage("تم تحديث بيانات الخادم بنجاح!");
@@ -854,7 +854,7 @@
                     return;
                 }
                 try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                     const servantDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`, servantId);
                     await deleteDoc(servantDocRef);
                     showMessage("تم حذف الخادم بنجاح.");
@@ -1039,7 +1039,7 @@
                 saveLocalAttendance(attendanceYearCache, currentServiceName);
             } else {
                 try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                     const dayDocRef = doc(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`, selectedFriday);
                     await setDoc(dayDocRef, dayData); 
                     attendanceYearCache[selectedFriday] = dayData;
@@ -1432,7 +1432,7 @@
                                 await loadAttendanceForYear(new Date().getFullYear());
                                 showMessage("تم استعادة البيانات بنجاح!");
                             } else {
-                                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                                const appId = "church-service-app-4f180"; // Using hardcoded App ID from config
                                 const servantsColRef = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/servants`);
                                 const attendanceColRef = collection(db, `artifacts/${appId}/users/${userId}/services/${currentServiceName}/attendance`);
 
